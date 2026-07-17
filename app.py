@@ -1,39 +1,65 @@
 import streamlit as st
 import pandas as pd
+from streamlit_gsheets import GSheetsConnection
 
 st.set_page_config(page_title="Dashboard Lei do Bem", layout="wide")
+st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
-st.title("📊 Análise de Horas - Lei do Bem (JIRA)")
+# Conexão com o Google Sheets (configurada nos Secrets do Streamlit)
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-uploaded_file = st.file_uploader("Suba o arquivo CSV do JIRA", type=["csv"])
+# 1. Upload do CSV mensal/individual
+uploaded_file = st.file_uploader("Suba o CSV de um Componente do JIRA", type=["csv"])
 
 if uploaded_file:
-    # 1. Carregamento e Conversão
-    df = pd.read_csv(uploaded_file)
+    # Lendo o arquivo que você acabou de baixar do JIRA
+    df_novo = pd.read_csv(uploaded_file)
     
-    # Converter segundos para horas decimais (JIRA exporta em segundos)
-    df['Horas'] = df['Tempo gasto'] / 3600
+    # Tratamento dos dados (Conversão de segundos para horas e datas)
+    df_novo['Horas'] = df_novo['Tempo gasto'] / 3600
+    df_novo['Data'] = pd.to_datetime(df_novo['Criado'], dayfirst=True)
+    df_novo['Mes'] = df_novo['Data'].dt.strftime('%m/%Y') # Formato MM/AAAA
     
-    # Converter 'Criado' para formato de data
-    df['Data'] = pd.to_datetime(df['Criado'], dayfirst=True)
-    df['Mes'] = df['Data'].dt.to_period('M')
+    # Pegando o nome do arquivo para registrar como metadado
+    df_novo['Arquivo_Origem'] = uploaded_file.name
     
-    # 2. Agrupamento e Cálculo
-    # Agrupa por Componente, Responsável e Mês
-    resumo = df.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
+    st.success(f"Arquivo '{uploaded_file.name}' carregado com sucesso! {len(df_novo)} linhas encontradas.")
     
-    # Formatação para exibir HH:MM (ex: 8.5 -> 8h 30m)
-    def formatar_horas(decimal):
-        horas = int(decimal)
-        minutos = int((decimal - horas) * 60)
-        return f"{horas}h {minutos}m"
+    # Botão para persistir os dados no Google Sheets
+    if st.button("🚀 Enviar e Acumular no Google Sheets"):
+        try:
+            # Busca o que já existe salvo no Sheets para não apagar o histórico
+            base_existente = conn.read(worksheet="Dados_Acumulados")
+            
+            # Une os dados antigos com os novos (Empilhamento)
+            base_atualizada = pd.concat([base_existente, df_novo], ignore_index=True)
+        except:
+            # Se for a primeiríssima vez e o Sheets estiver vazio
+            base_atualizada = df_novo
+            
+        # Salva a nova base gigante de volta no Google Sheets
+        conn.update(worksheet="Dados_Acumulados", data=base_atualizada)
+        st.balloons()
+        st.sidebar.success("Dados integrados ao histórico com sucesso!")
+
+# --- PARTE DE VISUALIZAÇÃO DO HISTÓRICO ---
+st.write("---")
+st.subheader("🔍 Visualização do Histórico Acumulado")
+
+try:
+    # O Dashboard sempre lê a versão atualizada do Sheets para te mostrar os gráficos
+    df_historico = conn.read(worksheet="Dados_Acumulados")
     
-    resumo['Tempo Formatado'] = resumo['Horas'].apply(formatar_horas)
+    # Criação dos Filtros Dinâmicos na Tela baseados no histórico real
+    lista_componentes = df_historico['Componentes'].unique()
+    comp_selecionado = st.multiselect("Filtrar por Componente/Projeto:", lista_componentes, default=lista_componentes)
     
-    # 3. Exibição
-    st.subheader("Resumo Consolidado")
-    st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Formatado']], use_container_width=True)
+    # Aplica o filtro
+    df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)]
     
-    # Download para facilitar a auditoria
-    csv_final = resumo.to_csv(index=False).encode('utf-8')
-    st.download_button("Baixar Relatório Final", data=csv_final, file_name="relatorio_lei_do_bem.csv")
+    # Agrupamento final para auditoria (Ex: Horas por colaborador por Mês)
+    resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
+    st.dataframe(resumo, use_container_width=True)
+    
+except:
+    st.info("Nenhum dado histórico encontrado no Google Sheets ainda. Faça o primeiro upload acima!")
