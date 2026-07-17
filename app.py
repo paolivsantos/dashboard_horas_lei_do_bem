@@ -6,13 +6,7 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Dashboard Lei do Bem", layout="wide")
 st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
-# Inicializa as variáveis de memória do Streamlit se elas não existirem
-if 'df_processado' not in st.session_state:
-    st.session_state.df_processado = None
-if 'nome_arquivo' not in st.session_state:
-    st.session_state.nome_arquivo = ""
-
-# Configuração de Autenticação
+# Autenticação
 try:
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds_dict = {
@@ -35,64 +29,65 @@ except Exception as e:
     st.error(f"Erro na conexão com o Google Sheets: {e}")
     conexao_ok = False
 
-# Definição das colunas padrão esperadas pelo Sheets
 colunas_padrao = [
     "Chave do Item", "ID do Item", "Resumo", "Componentes", "Tempo gasto",
     "∑ de tempo gasto", "Responsável", "ID do responsável", "Criado", "Resolvido",
     "Status", "Horas", "Data", "Mes", "Arquivo_Origem"
 ]
 
-uploaded_file = st.file_uploader("Suba o CSV de um Componente do JIRA", type=["csv"])
+uploaded_file = st.file_uploader("Suba o CSV exportado do JIRA", type=["csv"])
 
-# Se o usuário subiu um arquivo novo, processa e guarda na memória estável (session_state)
-if uploaded_file:
-    if st.session_state.nome_arquivo != uploaded_file.name:
-        try:
-            # Detecta o separador de forma automática
-            df_novo = pd.read_csv(uploaded_file, sep=None, engine='python')
-            
-            # Cálculos de tempo e conversões de datas seguras
-            df_novo['Horas'] = pd.to_numeric(df_novo['Tempo gasto'], errors='coerce').fillna(0) / 3600
+if uploaded_file and conexao_ok:
+    try:
+        # Lê o CSV detectando automaticamente o separador
+        df_novo = pd.read_csv(uploaded_file, sep=None, engine='python')
+        
+        # MODO DIAGNÓSTICO: Mostra na tela o que o Python enxergou
+        st.write("👀 **Prévia dos dados lidos do arquivo bruto:**")
+        st.dataframe(df_novo.head(2))
+        
+        # Verifica se as colunas essenciais existem antes de calcular
+        if 'Tempo gasto' not in df_novo.columns:
+            st.error("⚠️ Erro: A coluna 'Tempo gasto' não foi encontrada. Verifique os cabeçalhos exportados pelo JIRA.")
+        
+        # Cálculos com segurança extra
+        df_novo['Horas'] = pd.to_numeric(df_novo.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
+        
+        if 'Criado' in df_novo.columns:
             datas_convertidas = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
             df_novo['Data'] = datas_convertidas.fillna(df_novo['Criado']).astype(str)
             df_novo['Mes'] = datas_convertidas.dt.strftime('%m/%Y').fillna(df_novo['Criado'].astype(str).str[3:10])
-            df_novo['Arquivo_Origem'] = uploaded_file.name
+        else:
+            df_novo['Data'] = ""
+            df_novo['Mes'] = ""
+            st.error("⚠️ Erro: A coluna 'Criado' não foi encontrada.")
             
-            # Padronização de colunas
-            df_novo = df_novo.reindex(columns=colunas_padrao).fillna("")
-            
-            # Salva na memória persistente
-            st.session_state.df_processado = df_novo
-            st.session_state.nome_arquivo = uploaded_file.name
-        except Exception as e:
-            st.error(f"Erro ao processar o CSV: {e}")
-
-# Se houver dados processados na memória, exibe a interface de envio de forma estável
-if st.session_state.df_processado is not None and conexao_ok:
-    df_atual = st.session_state.df_processado
-    st.success(f"Arquivo '{st.session_state.nome_arquivo}' pronto! {len(df_atual)} linhas identificadas na memória.")
-    
-    if st.button("🚀 Enviar e Acumular no Google Sheets"):
-        try:
-            # Verifica se a planilha precisa de cabeçalhos
-            valores_atuais = sheet.get_all_values()
-            if len(valores_atuais) == 0:
-                sheet.append_row(colunas_padrao)
-            
-            dados_para_enviar = df_atual.values.tolist()
-            
-            if len(dados_para_enviar) > 0:
-                sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
-                st.balloons()
-                st.success(f"Sucesso real! {len(dados_para_enviar)} linhas enviadas à Planilha Mestra.")
+        df_novo['Arquivo_Origem'] = uploaded_file.name
+        
+        # Filtra apenas as colunas necessárias e preenche vazios
+        df_novo = df_novo.reindex(columns=colunas_padrao).fillna("")
+        
+        st.info(f"Arquivo processado: {len(df_novo)} linhas prontas para envio.")
+        
+        if st.button("🚀 Enviar e Acumular no Google Sheets"):
+            with st.spinner("Enviando para a nuvem..."):
+                valores_atuais = sheet.get_all_values()
                 
-                # Limpa a memória pós-envio com sucesso para evitar cliques duplos acidentais
-                st.session_state.df_processado = None
-                st.session_state.nome_arquivo = ""
-            else:
-                st.warning("Nenhum dado válido para envio.")
-        except Exception as e:
-            st.error(f"Erro ao enviar dados para o Google Sheets: {e}")
+                # Se a planilha estiver limpa, injeta a linha de títulos primeiro
+                if len(valores_atuais) == 0:
+                    sheet.append_row(colunas_padrao)
+                
+                dados_para_enviar = df_novo.values.tolist()
+                
+                if len(dados_para_enviar) > 0:
+                    sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
+                    st.balloons()
+                    st.success(f"✅ Sucesso! {len(dados_para_enviar)} linhas enviadas à Planilha Mestra.")
+                else:
+                    st.warning("O arquivo não continha dados válidos para enviar.")
+                    
+    except Exception as e:
+        st.error(f"❌ Erro crítico ao processar o CSV: {e}")
 
 # --- VISUALIZAÇÃO DOS DADOS ACUMULADOS ---
 st.write("---")
@@ -100,23 +95,33 @@ st.subheader("🔍 Filtros e Relatórios de Auditoria")
 
 if conexao_ok:
     try:
-        todas_linhas = sheet.get_all_records()
-        if todas_linhas:
-            df_historico = pd.DataFrame(todas_linhas)
+        # Usa um método mais forte para buscar dados que ignora falhas de cabeçalho
+        todas_linhas = sheet.get_all_values()
+        
+        # Checa se existe mais do que apenas a linha de cabeçalho (Linha 1)
+        if len(todas_linhas) > 1:
+            # Transforma as linhas brutas em tabela usando a linha 0 como títulos
+            df_historico = pd.DataFrame(todas_linhas[1:], columns=todas_linhas[0])
+            
+            # Limpa caso os títulos tenham se duplicado no meio dos dados
             df_historico = df_historico[df_historico['Chave do Item'] != 'Chave do Item']
             
-            lista_componentes = df_historico['Componentes'].dropna().unique()
-            lista_componentes = [c for c in lista_componentes if str(c).strip() != ""]
-            
-            if len(lista_componentes) > 0:
-                comp_selecionado = st.multiselect("Filtrar por Componente:", lista_componentes, default=lista_componentes)
-                df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)]
-            else:
-                df_filtrado = df_historico
+            # Filtros dinâmicos
+            if 'Componentes' in df_historico.columns:
+                lista_componentes = df_historico['Componentes'].dropna().unique()
+                lista_componentes = [c for c in lista_componentes if str(c).strip() != ""]
                 
-            df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'], errors='coerce').fillna(0)
-            
-            if not df_filtrado.empty and 'Responsável' in df_filtrado.columns:
+                if len(lista_componentes) > 0:
+                    comp_selecionado = st.multiselect("Filtrar por Componente:", lista_componentes, default=lista_componentes)
+                    df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)].copy()
+                else:
+                    df_filtrado = df_historico.copy()
+            else:
+                df_filtrado = df_historico.copy()
+                
+            # Agrupamentos para o relatório
+            if 'Horas' in df_filtrado.columns and 'Responsável' in df_filtrado.columns:
+                df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'], errors='coerce').fillna(0)
                 resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
                 
                 def formatar_horas(decimal):
@@ -127,8 +132,10 @@ if conexao_ok:
                 resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
                 st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
             else:
-                st.info("Dados estruturados encontrados, mas sem registros filtráveis.")
+                st.warning("A planilha do Google Sheets perdeu as colunas de 'Horas' ou 'Responsável'.")
         else:
-            st.info("A planilha no Google Sheets está vazia ou sem cabeçalhos válidos.")
+            st.info("A planilha no Google Sheets está limpa. Faça o primeiro upload acima!")
+            
     except Exception as e:
-        st.info("Aguardando uploads válidos para renderizar o histórico.")
+        # Mostra o erro real em vez de esconder!
+        st.error(f"❌ Erro ao tentar renderizar o histórico na tela: {e}")
