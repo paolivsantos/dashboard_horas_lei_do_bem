@@ -39,6 +39,14 @@ if uploaded_file:
         except:
             # Caso a planilha esteja limpa/vazia ou seja o primeiro upload
             base_atualizada = df_novo
+
+        # BLINDAGEM: Converte tipos complexos de data/timestamp para texto simples antes do envio.
+        # O Google Sheets não aceita objetos de data puros do Python através desse conector básico.
+        if 'Data' in base_atualizada.columns:
+            base_atualizada['Data'] = base_atualizada['Data'].astype(str)
+            
+        # Garante que todos os dados nulos sejam strings vazias para não quebrar a serialização JSON
+        base_atualizada = base_atualizada.fillna("")
             
         # Atualiza a planilha mestra no Google Drive
         conn.update(worksheet="Dados_Acumulados", data=base_atualizada)
@@ -60,6 +68,9 @@ try:
         
         # Aplicando filtros selecionados pelo usuário
         df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)]
+        
+        # Garante que a coluna Horas seja numérica para o agrupamento funcionar caso tenha voltado como texto
+        df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'], errors='coerce').fillna(0)
         
         # Exibição do resumo consolidado em horas para a Lei do Bem
         resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
