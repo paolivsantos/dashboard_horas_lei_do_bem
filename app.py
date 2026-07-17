@@ -17,23 +17,30 @@ if uploaded_file:
     
     # Tratamento dos dados e criação das colunas extras calculadas
     df_novo['Horas'] = df_novo['Tempo gasto'] / 3600
-    df_novo['Data'] = pd.to_datetime(df_novo['Criado'], dayfirst=True)
+    
+    # Conversão robusta da data para evitar o DateParseError
+    df_novo['Data'] = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
+    
+    # Criação do campo de Mês formatado (MM/AAAA) - Remove linhas onde a data falhou completamente
+    df_novo = df_novo.dropna(subset=['Data']).copy()
     df_novo['Mes'] = df_novo['Data'].dt.strftime('%m/%Y')
+    
+    # Registra o nome do arquivo de origem para rastreabilidade na auditoria
     df_novo['Arquivo_Origem'] = uploaded_file.name
     
-    st.success(f"Arquivo '{uploaded_file.name}' carregado! {len(df_novo)} linhas processadas.")
+    st.success(f"Arquivo '{uploaded_file.name}' carregado! {len(df_novo)} linhas processadas com sucesso.")
     
     # Botão para salvar no Google Sheets de forma acumulada
     if st.button("🚀 Enviar e Acumular no Google Sheets"):
         try:
-            # Tenta ler o histórico para empilhar
+            # Tenta ler o histórico para empilhar os novos dados
             base_existente = conn.read(worksheet="Dados_Acumulados")
             base_atualizada = pd.concat([base_existente, df_novo], ignore_index=True)
         except:
-            # Caso a planilha esteja limpa/vazia
+            # Caso a planilha esteja limpa/vazia ou seja o primeiro upload
             base_atualizada = df_novo
             
-        # Atualiza a planilha mestra
+        # Atualiza a planilha mestra no Google Drive
         conn.update(worksheet="Dados_Acumulados", data=base_atualizada)
         st.balloons()
         st.success("Dados integrados à Planilha Mestra com sucesso!")
@@ -43,29 +50,32 @@ st.write("---")
 st.subheader("🔍 Filtros e Relatórios de Auditoria")
 
 try:
-    # Sempre busca a versão em tempo real do Sheets para montar os gráficos
+    # Sempre busca a versão em tempo real do Sheets para montar os gráficos e tabelas
     df_historico = conn.read(worksheet="Dados_Acumulados")
     
-    # Filtros na tela
-    lista_componentes = df_historico['Componentes'].dropna().unique()
-    comp_selecionado = st.multiselect("Filtrar por Componente:", lista_componentes, default=lista_componentes)
-    
-    # Aplicando filtros
-    df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)]
-    
-    # Exibição do resumo consolidado em horas para a Lei do Bem
-    resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
-    
-    # Formatação amigável de horas decimais para HH:MM
-    def formatar_horas(decimal):
-        horas = int(decimal)
-        minutos = int((decimal - horas) * 60)
-        return f"{horas}h {minutos}m"
+    if not df_historico.empty:
+        # Filtros na tela dinâmicos
+        lista_componentes = df_historico['Componentes'].dropna().unique()
+        comp_selecionado = st.multiselect("Filtrar por Componente:", lista_componentes, default=lista_componentes)
         
-    resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
-    
-    # Mostra a tabela na tela
-    st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
+        # Aplicando filtros selecionados pelo usuário
+        df_filtrado = df_historico[df_historico['Componentes'].isin(comp_selecionado)]
+        
+        # Exibição do resumo consolidado em horas para a Lei do Bem
+        resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
+        
+        # Formatação amigável de horas decimais para o formato Xh Ym
+        def formatar_horas(decimal):
+            horas = int(decimal)
+            minutos = int((decimal - horas) * 60)
+            return f"{horas}h {minutos}m"
+            
+        resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
+        
+        # Mostra a tabela final estruturada na tela
+        st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
+    else:
+        st.info("A planilha no Google Sheets está vazia. Faça o primeiro upload acima!")
     
 except Exception as e:
-    st.info("Aguardando o primeiro upload para exibir o histórico consolidado.")
+    st.info("Aguardando o primeiro upload para estruturar e exibir o histórico consolidado.")
