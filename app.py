@@ -6,6 +6,12 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Dashboard Lei do Bem", layout="wide")
 st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
+# Inicializa as variáveis de memória do Streamlit se elas não existirem
+if 'df_processado' not in st.session_state:
+    st.session_state.df_processado = None
+if 'nome_arquivo' not in st.session_state:
+    st.session_state.nome_arquivo = ""
+
 # Configuração de Autenticação
 try:
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -38,47 +44,55 @@ colunas_padrao = [
 
 uploaded_file = st.file_uploader("Suba o CSV de um Componente do JIRA", type=["csv"])
 
-if uploaded_file and conexao_ok:
-    try:
-        # Detecta automaticamente se o CSV usa vírgula ou ponto e vírgula
-        df_novo = pd.read_csv(uploaded_file, sep=None, engine='python')
-        
-        # Garante que as colunas calculadas existam no arquivo novo
-        df_novo['Horas'] = pd.to_numeric(df_novo['Tempo gasto'], errors='coerce').fillna(0) / 3600
-        
-        # Conversão de data flexível sem descartar linhas caso falhe
-        datas_convertidas = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
-        
-        # Se a conversão funcionar, popula 'Data' e 'Mes', senão preserva o texto original do JIRA
-        df_novo['Data'] = datas_convertidas.fillna(df_novo['Criado']).astype(str)
-        
-        # Gera o mês baseado na conversão bem-sucedida ou extrai os caracteres iniciais do texto do JIRA
-        df_novo['Mes'] = datas_convertidas.dt.strftime('%m/%Y').fillna(df_novo['Criado'].astype(str).str[3:10])
-        df_novo['Arquivo_Origem'] = uploaded_file.name
-        
-        # Reordena e garante apenas as colunas que vão pro Sheets
-        df_novo = df_novo.reindex(columns=colunas_padrao)
-        df_novo = df_novo.fillna("")
-        
-        st.success(f"Arquivo '{uploaded_file.name}' processado! {len(df_novo)} linhas identificadas na memória.")
-        
-        if st.button("🚀 Enviar e Acumular no Google Sheets"):
-            # Verifica se a planilha está totalmente limpa e põe o cabeçalho se necessário
+# Se o usuário subiu um arquivo novo, processa e guarda na memória estável (session_state)
+if uploaded_file:
+    if st.session_state.nome_arquivo != uploaded_file.name:
+        try:
+            # Detecta o separador de forma automática
+            df_novo = pd.read_csv(uploaded_file, sep=None, engine='python')
+            
+            # Cálculos de tempo e conversões de datas seguras
+            df_novo['Horas'] = pd.to_numeric(df_novo['Tempo gasto'], errors='coerce').fillna(0) / 3600
+            datas_convertidas = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
+            df_novo['Data'] = datas_convertidas.fillna(df_novo['Criado']).astype(str)
+            df_novo['Mes'] = datas_convertidas.dt.strftime('%m/%Y').fillna(df_novo['Criado'].astype(str).str[3:10])
+            df_novo['Arquivo_Origem'] = uploaded_file.name
+            
+            # Padronização de colunas
+            df_novo = df_novo.reindex(columns=colunas_padrao).fillna("")
+            
+            # Salva na memória persistente
+            st.session_state.df_processado = df_novo
+            st.session_state.nome_arquivo = uploaded_file.name
+        except Exception as e:
+            st.error(f"Erro ao processar o CSV: {e}")
+
+# Se houver dados processados na memória, exibe a interface de envio de forma estável
+if st.session_state.df_processado is not None and conexao_ok:
+    df_atual = st.session_state.df_processado
+    st.success(f"Arquivo '{st.session_state.nome_arquivo}' pronto! {len(df_atual)} linhas identificadas na memória.")
+    
+    if st.button("🚀 Enviar e Acumular no Google Sheets"):
+        try:
+            # Verifica se a planilha precisa de cabeçalhos
             valores_atuais = sheet.get_all_values()
             if len(valores_atuais) == 0:
                 sheet.append_row(colunas_padrao)
-                
-            dados_para_enviar = df_novo.values.tolist()
+            
+            dados_para_enviar = df_atual.values.tolist()
             
             if len(dados_para_enviar) > 0:
                 sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
                 st.balloons()
                 st.success(f"Sucesso real! {len(dados_para_enviar)} linhas enviadas à Planilha Mestra.")
+                
+                # Limpa a memória pós-envio com sucesso para evitar cliques duplos acidentais
+                st.session_state.df_processado = None
+                st.session_state.nome_arquivo = ""
             else:
-                st.warning("O arquivo foi processado mas gerou zero linhas válidas para envio.")
-            
-    except Exception as e:
-        st.error(f"Erro ao processar o CSV: {e}. Verifique se o arquivo está correto.")
+                st.warning("Nenhum dado válido para envio.")
+        except Exception as e:
+            st.error(f"Erro ao enviar dados para o Google Sheets: {e}")
 
 # --- VISUALIZAÇÃO DOS DADOS ACUMULADOS ---
 st.write("---")
@@ -89,8 +103,6 @@ if conexao_ok:
         todas_linhas = sheet.get_all_records()
         if todas_linhas:
             df_historico = pd.DataFrame(todas_linhas)
-            
-            # Remove linhas de cabeçalho duplicadas acidentalmente se houver
             df_historico = df_historico[df_historico['Chave do Item'] != 'Chave do Item']
             
             lista_componentes = df_historico['Componentes'].dropna().unique()
@@ -104,7 +116,6 @@ if conexao_ok:
                 
             df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'], errors='coerce').fillna(0)
             
-            # Agrupa e soma as horas se existirem dados numéricos válidos
             if not df_filtrado.empty and 'Responsável' in df_filtrado.columns:
                 resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
                 
