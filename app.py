@@ -6,6 +6,14 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="Dashboard Lei do Bem", layout="wide")
 st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
+# 👇👇👇 COLE O LINK DA SUA PLANILHA AQUI DENTRO DAS ASPAS 👇👇👇
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1LKu-e1vVlTZ6NxMXO0MmTt-WqC2_iCRYF1mN8M0WIK8/edit?gid=0#gid=0"
+
+# Trava de segurança para garantir que você colou o link
+if URL_PLANILHA == "COLE_AQUI_A_URL_DA_SUA_PLANILHA":
+    st.error("⚠️ PARE! Edite o arquivo app.py e coloque o link real da sua planilha na variável URL_PLANILHA.")
+    st.stop()
+
 # --- Autenticação ---
 try:
     scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -23,7 +31,9 @@ try:
     }
     creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
     client = gspread.authorize(creds)
-    sheet = client.open("Base_Dados_Lei_do_Bem").worksheet("Dados_Acumulados")
+    
+    # Agora a conexão é cirúrgica e não tem como errar de arquivo
+    sheet = client.open_by_url(URL_PLANILHA).worksheet("Dados_Acumulados")
     conexao_ok = True
 except Exception as e:
     st.error(f"Erro na conexão com o Google Sheets: {e}")
@@ -35,13 +45,9 @@ colunas_padrao = [
     "Status", "Horas", "Data", "Mes", "Arquivo_Origem"
 ]
 
-# --- Formulário de Envio Seguro ---
-# Usar st.form garante que a página não pisque nem recarregue no meio do processo
-with st.form("meu_formulario", clear_on_submit=False):
-    uploaded_file = st.file_uploader("Suba o CSV exportado do JIRA", type=["csv"])
-    btn_enviar = st.form_submit_button("🚀 Enviar e Acumular no Google Sheets")
+uploaded_file = st.file_uploader("Suba o CSV exportado do JIRA", type=["csv"])
 
-if btn_enviar and uploaded_file and conexao_ok:
+if uploaded_file and conexao_ok:
     try:
         df_novo = pd.read_csv(uploaded_file, sep=None, engine='python')
         
@@ -60,29 +66,32 @@ if btn_enviar and uploaded_file and conexao_ok:
             df_novo['Arquivo_Origem'] = uploaded_file.name
             df_novo = df_novo.reindex(columns=colunas_padrao).fillna("")
             
+            # BLINDAGEM DE TIPO: Converte absolutamente tudo para string pura antes de ir para o JSON do Sheets
+            df_novo = df_novo.astype(str)
             dados_para_enviar = df_novo.values.tolist()
             
-            with st.spinner("Sincronizando com o Google Sheets..."):
-                # Mecanismo de Autolimpeza contra "Células Fantasmas"
-                todas_linhas = sheet.get_all_values()
-                linhas_com_conteudo = [linha for linha in todas_linhas if any(str(c).strip() for c in linha)]
-                
-                # Se a planilha não tiver dados reais ou tiver perdido o cabeçalho
-                if len(linhas_com_conteudo) == 0 or "Componentes" not in linhas_com_conteudo[0]:
-                    sheet.clear()  # Destrói todas as células invisíveis
-                    sheet.append_row(colunas_padrao) # Recria o cabeçalho puro na Linha 1
+            st.info(f"Pré-processamento concluído: {len(dados_para_enviar)} linhas prontas para envio.")
+            
+            # Botão fora de formulários para garantir disparo limpo
+            if st.button("🚀 CLIQUE AQUI PARA ENVIAR AO GOOGLE SHEETS"):
+                with st.spinner("Conectando na URL da planilha e salvando dados..."):
                     
-                # Envia os dados
-                if len(dados_para_enviar) > 0:
-                    sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
-                    st.success(f"✅ SUCESSO! {len(dados_para_enviar)} linhas salvas de verdade no Google Sheets.")
-                    st.balloons()
-                else:
-                    st.warning("Nenhum dado válido para enviar.")
+                    todas_linhas = sheet.get_all_values()
+                    linhas_com_conteudo = [linha for linha in todas_linhas if any(str(c).strip() for c in linha)]
                     
+                    if len(linhas_com_conteudo) == 0 or "Componentes" not in linhas_com_conteudo[0]:
+                        sheet.clear()
+                        sheet.append_row(colunas_padrao)
+                        
+                    if len(dados_para_enviar) > 0:
+                        sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
+                        st.success(f"✅ DADOS ENVIADOS COM SUCESSO! ({len(dados_para_enviar)} linhas)")
+                        st.balloons()
+                    else:
+                        st.warning("O arquivo não possuía dados após o tratamento.")
+                        
     except Exception as e:
-        st.error(f"❌ Erro crítico ao processar o CSV: {e}")
-
+        st.error(f"❌ Erro crítico: {e}")
 
 # --- VISUALIZAÇÃO DOS DADOS ACUMULADOS ---
 st.write("---")
@@ -90,7 +99,6 @@ st.subheader("🔍 Filtros e Relatórios de Auditoria")
 
 if conexao_ok:
     try:
-        # Puxa os dados e ignora qualquer linha que o usuário tenha apagado manualmente no meio da planilha
         todas_linhas = sheet.get_all_values()
         linhas_validas = [linha for linha in todas_linhas if any(str(c).strip() for c in linha)]
         
@@ -99,7 +107,7 @@ if conexao_ok:
             dados_tabela = linhas_validas[1:]
             
             df_historico = pd.DataFrame(dados_tabela, columns=cabecalhos)
-            df_historico = df_historico[df_historico['Chave do Item'] != 'Chave do Item'] # Limpa cabeçalhos repetidos
+            df_historico = df_historico[df_historico['Chave do Item'] != 'Chave do Item']
             
             if 'Componentes' in df_historico.columns:
                 lista_componentes = df_historico['Componentes'].dropna().unique()
@@ -113,7 +121,6 @@ if conexao_ok:
             else:
                 df_filtrado = df_historico.copy()
             
-            # Cálculo e Relatório
             if 'Horas' in df_filtrado.columns and 'Responsável' in df_filtrado.columns:
                 df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
                 resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
@@ -129,9 +136,9 @@ if conexao_ok:
                 resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
                 st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
             else:
-                st.warning("⚠️ As colunas 'Horas' ou 'Responsável' foram perdidas na planilha mestra.")
+                st.warning("⚠️ As colunas 'Horas' ou 'Responsável' não foram detectadas na leitura.")
         else:
-            st.info("📊 O histórico ainda está limpo. Suba o primeiro CSV para montar o dashboard.")
+            st.info("📊 A planilha no Google Sheets está vazia.")
             
     except Exception as e:
-        st.error(f"❌ Erro ao tentar processar o relatório inferior: {e}")
+        st.error(f"❌ Erro ao ler a planilha: {e}")
