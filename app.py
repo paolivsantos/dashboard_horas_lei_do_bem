@@ -45,28 +45,37 @@ if uploaded_file and conexao_ok:
         
         # Garante que as colunas calculadas existam no arquivo novo
         df_novo['Horas'] = pd.to_numeric(df_novo['Tempo gasto'], errors='coerce').fillna(0) / 3600
-        df_novo['Data'] = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
-        df_novo = df_novo.dropna(subset=['Data']).copy()
-        df_novo['Mes'] = df_novo['Data'].dt.strftime('%m/%Y')
+        
+        # Conversão de data flexível sem descartar linhas caso falhe
+        datas_convertidas = pd.to_datetime(df_novo['Criado'], errors='coerce', format='mixed')
+        
+        # Se a conversão funcionar, popula 'Data' e 'Mes', senão preserva o texto original do JIRA
+        df_novo['Data'] = datas_convertidas.fillna(df_novo['Criado']).astype(str)
+        
+        # Gera o mês baseado na conversão bem-sucedida ou extrai os caracteres iniciais do texto do JIRA
+        df_novo['Mes'] = datas_convertidas.dt.strftime('%m/%Y').fillna(df_novo['Criado'].astype(str).str[3:10])
         df_novo['Arquivo_Origem'] = uploaded_file.name
         
-        # Reordena e garante apenas as colunas que vão pro Sheets (evita erros de colunas extras do JIRA)
+        # Reordena e garante apenas as colunas que vão pro Sheets
         df_novo = df_novo.reindex(columns=colunas_padrao)
         df_novo = df_novo.fillna("")
-        df_novo['Data'] = df_novo['Data'].astype(str)
         
-        st.success(f"Arquivo '{uploaded_file.name}' processado! {len(df_novo)} linhas identificadas.")
+        st.success(f"Arquivo '{uploaded_file.name}' processado! {len(df_novo)} linhas identificadas na memória.")
         
         if st.button("🚀 Enviar e Acumular no Google Sheets"):
-            # Se a planilha estiver totalmente vazia, insere os cabeçalhos primeiro
-            if len(sheet.get_all_values()) == 0:
+            # Verifica se a planilha está totalmente limpa e põe o cabeçalho se necessário
+            valores_atuais = sheet.get_all_values()
+            if len(valores_atuais) == 0:
                 sheet.append_row(colunas_padrao)
                 
             dados_para_enviar = df_novo.values.tolist()
-            sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
             
-            st.balloons()
-            st.success("Dados integrados com sucesso! Atualize a página se necessário.")
+            if len(dados_para_enviar) > 0:
+                sheet.append_rows(dados_para_enviar, value_input_option="USER_ENTERED")
+                st.balloons()
+                st.success(f"Sucesso real! {len(dados_para_enviar)} linhas enviadas à Planilha Mestra.")
+            else:
+                st.warning("O arquivo foi processado mas gerou zero linhas válidas para envio.")
             
     except Exception as e:
         st.error(f"Erro ao processar o CSV: {e}. Verifique se o arquivo está correto.")
@@ -81,8 +90,11 @@ if conexao_ok:
         if todas_linhas:
             df_historico = pd.DataFrame(todas_linhas)
             
+            # Remove linhas de cabeçalho duplicadas acidentalmente se houver
+            df_historico = df_historico[df_historico['Chave do Item'] != 'Chave do Item']
+            
             lista_componentes = df_historico['Componentes'].dropna().unique()
-            lista_componentes = [c for c in lista_componentes if c != ""]
+            lista_componentes = [c for c in lista_componentes if str(c).strip() != ""]
             
             if len(lista_componentes) > 0:
                 comp_selecionado = st.multiselect("Filtrar por Componente:", lista_componentes, default=lista_componentes)
@@ -92,16 +104,20 @@ if conexao_ok:
                 
             df_filtrado['Horas'] = pd.to_numeric(df_filtrado['Horas'], errors='coerce').fillna(0)
             
-            resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
-            
-            def formatar_horas(decimal):
-                horas = int(decimal)
-                minutos = int((decimal - horas) * 60)
-                return f"{horas}h {minutos}m"
+            # Agrupa e soma as horas se existirem dados numéricos válidos
+            if not df_filtrado.empty and 'Responsável' in df_filtrado.columns:
+                resumo = df_filtrado.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
                 
-            resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
-            st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
+                def formatar_horas(decimal):
+                    horas = int(decimal)
+                    minutos = int((decimal - horas) * 60)
+                    return f"{horas}h {minutos}m"
+                    
+                resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
+                st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
+            else:
+                st.info("Dados estruturados encontrados, mas sem registros filtráveis.")
         else:
-            st.info("A planilha no Google Sheets está vazia. Faça o primeiro upload acima!")
+            st.info("A planilha no Google Sheets está vazia ou sem cabeçalhos válidos.")
     except Exception as e:
         st.info("Aguardando uploads válidos para renderizar o histórico.")
