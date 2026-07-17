@@ -8,7 +8,7 @@ st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
 # --- CONFIGURAÇÃO ---
 # URL direta da sua planilha
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1LKu-e1vVlTZ6NxMXO0MmTt-WqC2_iCRYF1mN8M0WIK8/edit?gid=0#gid=0"
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZijjIVYVhrnACrctAycjzk/edit?gid=0#gid=0"
 
 # --- AUTENTICAÇÃO ---
 try:
