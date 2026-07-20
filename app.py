@@ -7,127 +7,84 @@ st.set_page_config(page_title="Dashboard Lei do Bem", layout="wide")
 st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 
 # --- CONFIGURAÇÃO ---
-# URL direta da sua planilha
-URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZijjIVYVhrnACrctAycjzk/edit?gid=0#gid=0"
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1LKu-e1vVlTZ6NxMXO0MmTt-WqC2_iCRYF1mN8M0WIK8/edit?gid=0#gid=0"
+
+# Mapeamento consolidado
+MAPEAMENTO_RR = {
+    "Alescia Fernandes": "84654", "Anderson Batista": "85236", "Anderson Oliva": "78172",
+    "Bruno Moiteiro": "84437", "Dyonathan Jordan": "86281", "Gabriel Shioda": "86618",
+    "Glaucia Mekaru": "84452", "Guilherme Barreira": "85338", "Jorge Luiz": "86238",
+    "José Clailton": "85479", "Lucas Godinho": "85224", "Lucas Martinez": "84515",
+    "Rafael Ferreira": "85051", "Reinaldo Marques": "82927", "Ronaldo Maciel": "84162",
+    "Vinicius Freire": "85499", "Vittor Strefezzi": "85335", "Willian Kenji": "85217"
+}
 
 # --- AUTENTICAÇÃO ---
 try:
-    scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds_dict = {
-        "type": st.secrets["gcp_service_account"]["type"],
-        "project_id": st.secrets["gcp_service_account"]["project_id"],
-        "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
-        "private_key": st.secrets["gcp_service_account"]["private_key"],
-        "client_email": st.secrets["gcp_service_account"]["client_email"],
-        "client_id": st.secrets["gcp_service_account"]["client_id"],
-        "auth_uri": st.secrets["gcp_service_account"]["auth_uri"],
-        "token_uri": st.secrets["gcp_service_account"]["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["gcp_service_account"]["auth_provider_x509_cert_url"],
-        "client_x509_cert_url": st.secrets["gcp_service_account"]["client_x509_cert_url"]
-    }
-    creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+    creds_dict = st.secrets["gcp_service_account"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     client = gspread.authorize(creds)
-    # Abre a planilha pelo URL e pega a primeira aba (índice 0)
     sheet = client.open_by_url(URL_PLANILHA).get_worksheet(0)
     conexao_ok = True
 except Exception as e:
-    st.error(f"Erro na conexão com o Google Sheets: {e}")
+    st.error(f"Erro na conexão: {e}")
     conexao_ok = False
 
-# Colunas padrão para garantir que o envio sempre fique organizado
-colunas_padrao = [
-    "Chave do Item", "ID do Item", "Resumo", "Componentes", "Tempo gasto",
-    "∑ de tempo gasto", "Responsável", "ID do responsável", "Criado", "Resolvido",
-    "Status", "Horas", "Data", "Mes", "Arquivo_Origem"
-]
-
-# --- PROCESSAMENTO E ENVIO ---
+# --- PROCESSAMENTO ---
 uploaded_file = st.file_uploader("Suba o CSV do JIRA", type=["csv"])
 
 if uploaded_file and conexao_ok:
     try:
-        # Lê o arquivo
         df = pd.read_csv(uploaded_file, sep=None, engine='python')
-        
-        # Faz os cálculos de Horas e Datas
-        if 'Tempo gasto' in df.columns:
-            df['Horas'] = pd.to_numeric(df['Tempo gasto'], errors='coerce').fillna(0) / 3600
-        else:
-            df['Horas'] = 0
-            
-        if 'Criado' in df.columns:
-            datas_convertidas = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
-            df['Data'] = datas_convertidas.fillna(df['Criado']).astype(str)
-            df['Mes'] = datas_convertidas.dt.strftime('%m/%Y').fillna(df['Criado'].astype(str).str[3:10])
-        else:
-            df['Data'], df['Mes'] = "", ""
-            
+        df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
         df['Arquivo_Origem'] = uploaded_file.name
         
-        # Filtra e organiza as colunas
-        df = df.reindex(columns=colunas_padrao).fillna("")
-        df = df.astype(str)
-        
-        st.write(f"✅ Arquivo pronto para envio: {len(df)} linhas.")
+        # Converte para string para envio
+        df_envio = df.astype(str)
         
         if st.button("🚀 ENVIAR PARA PLANILHA"):
-            with st.spinner("Gravando no Google Sheets..."):
-                sheet.append_rows(df.values.tolist(), value_input_option="USER_ENTERED")
-                st.success("Dados enviados com sucesso!")
-                st.balloons()
-            
+            sheet.append_rows(df_envio.values.tolist(), value_input_option="USER_ENTERED")
+            st.success("Dados enviados!")
+            st.balloons()
     except Exception as e:
-        st.error(f"Erro no processamento do arquivo: {e}")
+        st.error(f"Erro: {e}")
 
-# --- RELATÓRIO E AUDITORIA (BLINDADO CONTRA COLUNAS VAZIAS) ---
+# --- RELATÓRIO MATRICIAL ---
 st.write("---")
-st.subheader("🔍 Histórico de Dados na Planilha")
+st.subheader("📅 Matriz de Horas por Componente, Responsável e Mês")
 
 if conexao_ok:
     try:
-        # Busca tudo o que está na planilha
         dados = sheet.get_all_values()
-        
         if len(dados) > 1:
-            # 1. Pega os cabeçalhos originais (linha 1)
-            cabecalhos_originais = dados[0]
+            # Limpeza das colunas vazias
+            cabecalhos_uteis = [c for c in dados[0] if c.strip() != '']
+            dados_limpos = [linha[:len(cabecalhos_uteis)] for linha in dados[1:]]
+            df_hist = pd.DataFrame(dados_limpos, columns=cabecalhos_uteis)
             
-            # 2. Mantém APENAS as colunas que têm um nome escrito (ignora os vazios '')
-            colunas_uteis = [c for c in cabecalhos_originais if c.strip() != '']
-            num_colunas = len(colunas_uteis)
+            # Formatação
+            df_hist['Horas'] = pd.to_numeric(df_hist['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
+            df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             
-            # 3. Corta os dados da tabela para terem exatamente o mesmo número de colunas úteis
-            dados_limpos = [linha[:num_colunas] for linha in dados[1:]]
+            # Pivot table com meses como colunas
+            # Ordena meses cronologicamente (assume formato MM/YYYY)
+            df_hist['Mes_Dt'] = pd.to_datetime(df_hist['Mes'], format='%m/%Y', errors='coerce')
+            df_hist = df_hist.sort_values('Mes_Dt')
             
-            # 4. Cria o DataFrame sem perigo de nomes duplicados
-            df_hist = pd.DataFrame(dados_limpos, columns=colunas_uteis)
+            pivot = pd.pivot_table(
+                df_hist, 
+                values='Horas', 
+                index=['Componentes', 'Responsável', 'RR'], 
+                columns='Mes', 
+                aggfunc='sum', 
+                fill_value=0
+            )
             
-            # Mostra as últimas linhas para confirmar o que está lá
-            st.dataframe(df_hist.tail(10), use_container_width=True)
+            # Adiciona totalizador
+            pivot['Total'] = pivot.sum(axis=1)
             
-            # --- Seção de Resumo de Horas ---
-            if 'Componentes' in df_hist.columns and 'Horas' in df_hist.columns and 'Responsável' in df_hist.columns:
-                st.write("### ⏱️ Resumo de Horas por Responsável")
-                
-                # Prepara os dados para o cálculo
-                df_hist['Horas'] = pd.to_numeric(df_hist['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
-                df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item'] # Remove cabeçalhos duplicados no meio
-                
-                resumo = df_hist.groupby(['Componentes', 'Responsável', 'Mes'])['Horas'].sum().reset_index()
-                
-                def formatar_horas(decimal):
-                    horas = int(decimal)
-                    minutos = int(round((decimal - horas) * 60, 0))
-                    if minutos == 60:
-                        horas += 1
-                        minutos = 0
-                    return f"{horas}h {minutos}m"
-                    
-                resumo['Tempo Total'] = resumo['Horas'].apply(formatar_horas)
-                st.dataframe(resumo[['Componentes', 'Responsável', 'Mes', 'Tempo Total']], use_container_width=True)
-                
+            st.dataframe(pivot.style.format("{:.1f}"), use_container_width=True)
         else:
-            st.info("Planilha vazia ou com cabeçalho ausente.")
-            
+            st.info("Planilha vazia.")
     except Exception as e:
-        st.error(f"Erro ao ler histórico: {e}")
+        st.error(f"Erro na visualização: {e}")
