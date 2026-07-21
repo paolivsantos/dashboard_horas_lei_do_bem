@@ -11,8 +11,8 @@ URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZij
 
 # Mapeamento consolidado
 MAPEAMENTO_RR = {
-    "Alescia Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
-    "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan": "86281", "Gabriel Shioda Lima": "86618",
+    "Alescia Bezerra Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
+    "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan Do Nascimento Araujo": "86281", "Gabriel Shioda Lima": "86618",
     "Glaucia Hiromi Mekaru": "84452", "Guilherme Oliver Barreira": "85338", "Jorge Luiz dos Santos": "86238",
     "José Clailton Menezes Jorge": "85479", "Lucas De Maria Godinho": "85224", "Lucas Martinez": "84515",
     "Rafael Ferreira Da Silva": "85051", "Reinaldo Marques": "82927", "Ronaldo de Souza Maciel": "84162",
@@ -44,21 +44,35 @@ if uploaded_file and conexao_ok:
         df = pd.read_csv(uploaded_file, sep=None, engine='python')
         df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
         
-        # Tratamento rigoroso de data para garantir o mês correto
+        # Tratamento de Data de Criação (para manter o campo Data preenchido)
         if 'Criado' in df.columns:
-            datas_convertidas = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
-            df['Data'] = datas_convertidas.dt.strftime('%Y-%m-%d').fillna(df['Criado'].astype(str))
-            
-            # Dicionário para traduzir o mês numérico para abreviação em português
-            meses_pt = {
-                01/2026: 'JAN', 02/2026: 'FEV', 03/2026: 'MAR', 04/2026: 'ABR', 05/2026: 'MAI', 06/2026: 'JUN',
-                07/2026: 'JUL', 08/2026: 'AGO', 09/2026: 'SET', 10/2026: 'OUT', 11/2026: 'NOV', 12/2026: 'DEZ'
-            }
-            num_mes = datas_convertidas.dt.month
-            ano_mes = datas_convertidas.dt.year
-            df['Mes'] = num_mes.map(meses_pt) + '/' + ano_mes.astype(str)
+            datas_criado = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
+            df['Data'] = datas_criado.dt.strftime('%Y-%m-%d').fillna(df['Criado'].astype(str))
         else:
-            df['Data'], df['Mes'] = "", ""
+            df['Data'] = ""
+
+        # Tratamento de Mês baseado primariamente na coluna 'Resolvido' 
+        # (Se estiver em branco, usa a data 'Criado' como plano B)
+        coluna_base_data = 'Resolvido' if 'Resolvido' in df.columns else 'Criado'
+        if coluna_base_data in df.columns:
+            datas_base = pd.to_datetime(df[coluna_base_data], errors='coerce', format='mixed')
+            
+            # Se 'Resolvido' estiver vazio para algum item, tenta preencher com 'Criado'
+            if 'Resolvido' in df.columns and 'Criado' in df.columns:
+                datas_criado_alt = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
+                datas_base = datas_base.fillna(datas_criado_alt)
+
+            meses_pt = {
+                1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN',
+                7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+            }
+            num_mes = datas_base.dt.month
+            ano_mes = datas_base.dt.year
+            
+            # Formata explicitamente como 'JAN/2026', 'FEV/2026', etc.
+            df['Mes'] = [f"{meses_pt[int(m)]}/{int(a)}" if pd.notnull(m) and pd.notnull(a) else "" for m, a in zip(num_mes, ano_mes)]
+        else:
+            df['Mes'] = ""
             
         df['Arquivo_Origem'] = uploaded_file.name
         df = df.reindex(columns=colunas_padrao).fillna("")
@@ -90,28 +104,54 @@ if conexao_ok:
             # Remove linhas de cabeçalho duplicadas que possam ter vindo do histórico antigo
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
-            # Pivot table com os meses por extenso
-            pivot = pd.pivot_table(
-                df_hist, 
-                values='Horas', 
-                index=['Componentes', 'Responsável', 'RR'], 
-                columns='Mes', 
-                aggfunc='sum', 
-                fill_value=0
-            )
+            # Remove linhas onde a coluna Mes está vazia ou inválida
+            df_hist = df_hist[df_hist['Mes'].str.contains('/', na=False)]
             
-            # Adiciona totalizador
-            pivot['Total'] = pivot.sum(axis=1)
-            
-            # Estilização visual atualizada (.map em vez de .applymap)
-            def destacar_celulas(val):
-                if isinstance(val, (int, float)) and val > 0:
-                    return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
-                return ''
+            if not df_hist.empty:
+                # Cria colunas auxiliares de Ano e Mês numérico para ordenação correta na Pivot Table
+                def extrair_ordenacao(val):
+                    try:
+                        partes = val.split('/')
+                        mes_str, ano_str = partes[0], partes[1]
+                        inv_meses = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6,
+                                     'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
+                        return int(ano_str) * 100 + inv_meses.get(mes_str, 0)
+                    except:
+                        return 0
 
-            pivot_estilizado = pivot.style.format("{:.1f}").map(destacar_celulas)
-            
-            st.dataframe(pivot_estilizado, use_container_width=True)
+                df_hist['Ord_Mes'] = df_hist['Mes'].apply(extrair_ordenacao)
+                
+                # Ordena o DataFrame base pelas colunas auxiliares para garantir a ordem cronológica nas colunas da tabela
+                df_hist = df_hist.sort_values('Ord_Mes')
+                
+                # Pivot table utilizando a coluna 'Mes' formatada por extenso
+                pivot = pd.pivot_table(
+                    df_hist, 
+                    values='Horas', 
+                    index=['Componentes', 'Responsável', 'RR'], 
+                    columns='Mes', 
+                    aggfunc='sum', 
+                    fill_value=0
+                )
+                
+                # Reorganiza as colunas da pivot table em ordem cronológica estritamente correta
+                colunas_ordenadas = sorted([c for c in pivot.columns if c != 'Total'], key=extrair_ordenacao)
+                pivot = pivot[colunas_ordenadas]
+
+                # Adiciona totalizador
+                pivot['Total'] = pivot.sum(axis=1)
+                
+                # Estilização visual (mantendo as cores nas células com horas)
+                def destacar_celulas(val):
+                    if isinstance(val, (int, float)) and val > 0:
+                        return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
+                    return ''
+
+                pivot_estilizado = pivot.style.format("{:.1f}").map(destacar_celulas)
+                
+                st.dataframe(pivot_estilizado, use_container_width=True)
+            else:
+                st.info("Nenhum dado com mês válido encontrado na planilha.")
         else:
             st.info("Planilha vazia.")
     except Exception as e:
