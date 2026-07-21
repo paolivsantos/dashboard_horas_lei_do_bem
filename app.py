@@ -109,7 +109,7 @@ if conexao_ok:
                     return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
                 return ''
 
-            pivot_estilizado = pivot.style.format("{:.1f}").applymap(destacar_celulas)
+            pivot_estilizado = pivot.style.format("{:.1f}").map(destacar_celulas)
             
             st.dataframe(pivot_estilizado, use_container_width=True)
         else:
