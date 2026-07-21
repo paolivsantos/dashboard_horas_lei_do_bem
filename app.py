@@ -103,7 +103,7 @@ if conexao_ok:
             # Adiciona totalizador
             pivot['Total'] = pivot.sum(axis=1)
             
-            # Estilização visual: colore em tom suave de azul/verde as células que possuem horas (> 0)
+            # Estilização visual atualizada (.map em vez de .applymap)
             def destacar_celulas(val):
                 if isinstance(val, (int, float)) and val > 0:
                     return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
