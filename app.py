@@ -9,7 +9,7 @@ st.title("📊 Centralizador Lei do Bem (JIRA -> Sheets)")
 # --- CONFIGURAÇÃO ---
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZijjIVYVhrnACrctAycjzk/edit?gid=0#gid=0"
 
-# Mapeamento consolidado
+# Mapeamento consolidado de RR
 MAPEAMENTO_RR = {
     "Alescia Bezerra Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
     "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan Do Nascimento Araujo": "86281", "Gabriel Shioda Lima": "86618",
@@ -17,6 +17,28 @@ MAPEAMENTO_RR = {
     "José Clailton Menezes Jorge": "85479", "Lucas De Maria Godinho": "85224", "Lucas Martinez": "84515",
     "Rafael Ferreira Da Silva": "85051", "Reinaldo Marques": "82927", "Ronaldo de Souza Maciel": "84162",
     "Vinicius Freire de Oliveira": "85499", "Vittor Strefezzi": "85335", "Willian Kenji Hira": "85217"
+}
+
+# Mapeamento de Descrição da Atividade
+MAPEAMENTO_DESCRICAO = {
+    "Alescia Bezerra Fernandes": "Desenvolvedora Front-end",
+    "Anderson Batista Da Costa": "Desenvolvedor Front-end",
+    "Anderson Lazaro Gomes Oliva": "Analista de Testes",
+    "Bruno Rafael Borges Beltrao Moiteiro": "Arquiteto de Sistemas",
+    "Dyonathan Jordan Do Nascimento Araujo": "Analista de Testes",
+    "Gabriel Shioda Lima": "Desenvolvedor Front-end",
+    "Glaucia Hiromi Mekaru": "Desenvolvedora Back-end",
+    "Guilherme Oliver Barreira": "Analista de Testes",
+    "Jorge Luiz dos Santos": "Desenvolvedor Front-end",
+    "José Clailton Menezes Jorge": "Desenvolvedor Back-end",
+    "Lucas De Maria Godinho": "UX/UI Designer",
+    "Lucas Martinez": "UX/UI Designer",
+    "Rafael Ferreira Da Silva": "Desenvolvedor Front-end",
+    "Reinaldo Marques": "Analista de Testes",
+    "Ronaldo de Souza Maciel": "Especialista Front-end",
+    "Vinicius Freire de Oliveira": "Desenvolvedor Back-end",
+    "Vittor Strefezzi": "Desenvolvedor Back-end",
+    "Willian Kenji Hira": "Desenvolvedor Front-end"
 }
 
 # --- AUTENTICAÇÃO ---
@@ -144,6 +166,7 @@ if conexao_ok:
                 df_hist['Horas'] = 0
 
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
+            df_hist['Descrição de Atividade'] = df_hist['Responsável'].map(MAPEAMENTO_DESCRICAO).fillna("Outros")
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
             # Recalcula e normaliza dinamicamente o mês de cada linha
@@ -168,7 +191,7 @@ if conexao_ok:
                 pivot = pd.pivot_table(
                     df_hist, 
                     values='Horas', 
-                    index=['Componentes', 'Responsável', 'RR'], 
+                    index=['Componentes', 'Responsável', 'RR', 'Descrição de Atividade'], 
                     columns='Mes_Normalizado', 
                     aggfunc='sum', 
                     fill_value=0
