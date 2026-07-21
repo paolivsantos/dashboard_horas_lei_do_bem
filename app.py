@@ -11,8 +11,8 @@ URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZij
 
 # Mapeamento consolidado de RR
 MAPEAMENTO_RR = {
-    "Alescia Bezerra Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
-    "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan Do Nascimento Araujo": "86281", "Gabriel Shioda Lima": "86618",
+    "Alescia Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
+    "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan": "86281", "Gabriel Shioda Lima": "86618",
     "Glaucia Hiromi Mekaru": "84452", "Guilherme Oliver Barreira": "85338", "Jorge Luiz dos Santos": "86238",
     "José Clailton Menezes Jorge": "85479", "Lucas De Maria Godinho": "85224", "Lucas Martinez": "84515",
     "Rafael Ferreira Da Silva": "85051", "Reinaldo Marques": "82927", "Ronaldo de Souza Maciel": "84162",
@@ -21,11 +21,11 @@ MAPEAMENTO_RR = {
 
 # Mapeamento de Descrição da Atividade
 MAPEAMENTO_DESCRICAO = {
-    "Alescia Bezerra Fernandes": "Desenvolvedora Front-end",
+    "Alescia Fernandes": "Desenvolvedora Front-end",
     "Anderson Batista Da Costa": "Desenvolvedor Front-end",
     "Anderson Lazaro Gomes Oliva": "Analista de Testes",
     "Bruno Rafael Borges Beltrao Moiteiro": "Arquiteto de Sistemas",
-    "Dyonathan Jordan Do Nascimento Araujo": "Analista de Testes",
+    "Dyonathan Jordan": "Analista de Testes",
     "Gabriel Shioda Lima": "Desenvolvedor Front-end",
     "Glaucia Hiromi Mekaru": "Desenvolvedora Back-end",
     "Guilherme Oliver Barreira": "Analista de Testes",
