@@ -30,24 +30,46 @@ except Exception as e:
     st.error(f"Erro na conexão: {e}")
     conexao_ok = False
 
-# --- PROCESSAMENTO ---
+colunas_padrao = [
+    "Chave do Item", "ID do Item", "Resumo", "Componentes", "Tempo gasto",
+    "∑ de tempo gasto", "Responsável", "ID do responsável", "Criado", "Resolvido",
+    "Status", "Horas", "Data", "Mes", "Arquivo_Origem"
+]
+
+# --- PROCESSAMENTO NO UPLOAD ---
 uploaded_file = st.file_uploader("Suba o CSV do JIRA", type=["csv"])
 
 if uploaded_file and conexao_ok:
     try:
         df = pd.read_csv(uploaded_file, sep=None, engine='python')
         df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
-        df['Arquivo_Origem'] = uploaded_file.name
         
-        # Converte para string para envio
+        # Tratamento rigoroso de data para garantir o mês correto
+        if 'Criado' in df.columns:
+            datas_convertidas = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
+            df['Data'] = datas_convertidas.dt.strftime('%Y-%m-%d').fillna(df['Criado'].astype(str))
+            
+            # Dicionário para traduzir o mês numérico para abreviação em português
+            meses_pt = {
+                1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN',
+                7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+            }
+            num_mes = datas_convertidas.dt.month
+            ano_mes = datas_convertidas.dt.year
+            df['Mes'] = num_mes.map(meses_pt) + '/' + ano_mes.astype(str)
+        else:
+            df['Data'], df['Mes'] = "", ""
+            
+        df['Arquivo_Origem'] = uploaded_file.name
+        df = df.reindex(columns=colunas_padrao).fillna("")
         df_envio = df.astype(str)
         
         if st.button("🚀 ENVIAR PARA PLANILHA"):
             sheet.append_rows(df_envio.values.tolist(), value_input_option="USER_ENTERED")
-            st.success("Dados enviados!")
+            st.success("Dados enviados com sucesso!")
             st.balloons()
     except Exception as e:
-        st.error(f"Erro: {e}")
+        st.error(f"Erro no processamento: {e}")
 
 # --- RELATÓRIO MATRICIAL ---
 st.write("---")
@@ -57,20 +79,18 @@ if conexao_ok:
     try:
         dados = sheet.get_all_values()
         if len(dados) > 1:
-            # Limpeza das colunas vazias
             cabecalhos_uteis = [c for c in dados[0] if c.strip() != '']
             dados_limpos = [linha[:len(cabecalhos_uteis)] for linha in dados[1:]]
             df_hist = pd.DataFrame(dados_limpos, columns=cabecalhos_uteis)
             
-            # Formatação
+            # Limpeza
             df_hist['Horas'] = pd.to_numeric(df_hist['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             
-            # Pivot table com meses como colunas
-            # Ordena meses cronologicamente (assume formato MM/YYYY)
-            df_hist['Mes_Dt'] = pd.to_datetime(df_hist['Mes'], format='%m/%Y', errors='coerce')
-            df_hist = df_hist.sort_values('Mes_Dt')
+            # Remove linhas de cabeçalho duplicadas que possam ter vindo do histórico antigo
+            df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
+            # Pivot table com os meses por extenso
             pivot = pd.pivot_table(
                 df_hist, 
                 values='Horas', 
@@ -83,7 +103,15 @@ if conexao_ok:
             # Adiciona totalizador
             pivot['Total'] = pivot.sum(axis=1)
             
-            st.dataframe(pivot.style.format("{:.1f}"), use_container_width=True)
+            # Estilização visual: colore em tom suave de azul/verde as células que possuem horas (> 0)
+            def destacar_celulas(val):
+                if isinstance(val, (int, float)) and val > 0:
+                    return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
+                return ''
+
+            pivot_estilizado = pivot.style.format("{:.1f}").applymap(destacar_celulas)
+            
+            st.dataframe(pivot_estilizado, use_container_width=True)
         else:
             st.info("Planilha vazia.")
     except Exception as e:
