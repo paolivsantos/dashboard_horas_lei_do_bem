@@ -64,8 +64,6 @@ if uploaded_file and conexao_ok:
                 7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
             }
             num_mes = datas_base.dt.month
-            
-            # Padroniza apenas com o nome do mês por extenso (Ex: JAN, FEV...)
             df['Mes'] = [meses_pt[int(m)] if pd.notnull(m) else "" for m in num_mes]
         else:
             df['Mes'] = ""
@@ -98,8 +96,7 @@ if conexao_ok:
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
-            # Recalcula/Normaliza a coluna 'Mes' diretamente das datas da planilha para expurgar resíduos antigos
-            # Isso garante que mesmo dados antigos da planilha venham padronizados apenas como JAN, FEV, etc.
+            # Normalização de meses existentes
             def normalizar_mes(row):
                 for col in ['Resolvido', 'Criado', 'Data']:
                     if col in row and str(row[col]).strip() != "":
@@ -108,15 +105,16 @@ if conexao_ok:
                             m_map = {1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN',
                                      7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'}
                             return m_map.get(dt.month, "")
-                return str(row.get('Mes', '')).upper()
+                val_atual = str(row.get('Mes', '')).upper()
+                for m in ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']:
+                    if m in val_atual:
+                        return m
+                return ""
 
             df_hist['Mes_Normalizado'] = df_hist.apply(normalizar_mes, axis=1)
             df_hist = df_hist[df_hist['Mes_Normalizado'].isin(['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'])]
 
             if not df_hist.empty:
-                # Ordem fixa cronológica dos meses para exibição limpa
-                ordem_meses_fixa = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
-                
                 pivot = pd.pivot_table(
                     df_hist, 
                     values='Horas', 
@@ -126,11 +124,11 @@ if conexao_ok:
                     fill_value=0
                 )
                 
-                # Reorganiza as colunas estritamente na ordem cronológica de Janeiro a Dezembro
-                colunas_existentes = [m for m in ordem_meses_fixa if m in pivot.columns]
-                pivot = pivot[colunas_existentes]
+                # FORÇA a exibição de TODOS os meses do ano em ordem exata, mesmo que estejam zerados
+                ordem_meses_fixa = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
+                pivot = pivot.reindex(columns=ordem_meses_fixa, fill_value=0)
 
-                # Adiciona totalizador
+                # Adiciona totalizador por linha
                 pivot['Total'] = pivot.sum(axis=1)
                 
                 # Estilização visual (cores nas células com horas)
