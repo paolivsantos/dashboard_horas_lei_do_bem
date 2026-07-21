@@ -64,7 +64,7 @@ if uploaded_file and conexao_ok:
     try:
         df = pd.read_csv(uploaded_file, sep=None, engine='python')
         
-        # Normaliza nomes de colunas caso venham com maiúsculas/minúsculas diferentes (ex: 'Σ de Tempo Gasto' vs '∑ de tempo gasto')
+        # Normaliza nomes de colunas
         df.columns = [c.strip() for c in df.columns]
         if 'Σ de Tempo Gasto' in df.columns and '∑ de tempo gasto' not in df.columns:
             df['∑ de tempo gasto'] = df['Σ de Tempo Gasto']
@@ -97,7 +97,14 @@ if uploaded_file and conexao_ok:
             
         df['Arquivo_Origem'] = uploaded_file.name
         
-        # Garante as colunas padrão antes de enviar
+        # Mapeia colunas caso os nomes no CSV sejam ligeiramente diferentes
+        rename_map = {}
+        if 'Chave da item' in df.columns:
+            rename_map['Chave da item'] = 'Chave do Item'
+        if 'ID da item' in df.columns:
+            rename_map['ID da item'] = 'ID do Item'
+        df = df.rename(columns=rename_map)
+
         for col in colunas_padrao:
             if col not in df.columns:
                 df[col] = ""
@@ -129,7 +136,7 @@ if conexao_ok:
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
-            # Normalização de meses existentes no histórico da planilha
+            # Recalcula e normaliza dinamicamente o mês de cada linha baseando-se estritamente na data de resolução/criação
             def normalizar_mes(row):
                 for col in ['Resolvido', 'Criado', 'Data']:
                     if col in row and str(row[col]).strip() != "":
