@@ -69,8 +69,8 @@ if uploaded_file and conexao_ok:
         if 'Σ de Tempo Gasto' in df.columns and '∑ de tempo gasto' not in df.columns:
             df['∑ de tempo gasto'] = df['Σ de Tempo Gasto']
             
-        # Garante divisão precisa para gerar as horas decimais completas
-        df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600.0
+        # Calcula as horas aplicando o arredondamento para inteiro
+        df['Horas'] = (pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600.0).round().astype(int)
         
         # Data de criação para referência
         if 'Criado' in df.columns:
@@ -98,7 +98,6 @@ if uploaded_file and conexao_ok:
             
         df['Arquivo_Origem'] = uploaded_file.name
         
-        # Mapeia colunas caso os nomes no CSV sejam ligeiramente diferentes
         rename_map = {}
         if 'Chave da item' in df.columns:
             rename_map['Chave da item'] = 'Chave do Item'
@@ -132,22 +131,22 @@ if conexao_ok:
             dados_limpos = [linha[:len(cabecalhos_uteis)] for linha in dados[1:]]
             df_hist = pd.DataFrame(dados_limpos, columns=cabecalhos_uteis)
             
-            # Limpeza robusta de horas lidas da planilha (substitui vírgula por ponto e converte para float com alta precisão)
+            # Limpeza e arredondamento das horas lidas da planilha
             if 'Horas' in df_hist.columns:
                 df_hist['Horas'] = (
                     df_hist['Horas']
                     .astype(str)
-                    .str.replace('.', '', regex=False) # remove separador de milhar se houver
-                    .str.replace(',', '.', regex=False) # converte vírgula decimal para ponto
+                    .str.replace('.', '', regex=False)
+                    .str.replace(',', '.', regex=False)
                 )
-                df_hist['Horas'] = pd.to_numeric(df_hist['Horas'], errors='coerce').fillna(0.0)
+                df_hist['Horas'] = pd.to_numeric(df_hist['Horas'], errors='coerce').fillna(0).round()
             else:
-                df_hist['Horas'] = 0.0
+                df_hist['Horas'] = 0
 
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
-            # Recalcula e normaliza dinamicamente o mês de cada linha baseando-se estritamente na data de resolução/criação
+            # Recalcula e normaliza dinamicamente o mês de cada linha
             def normalizar_mes(row):
                 for col in ['Resolvido', 'Criado', 'Data']:
                     if col in row and str(row[col]).strip() != "":
@@ -172,23 +171,23 @@ if conexao_ok:
                     index=['Componentes', 'Responsável', 'RR'], 
                     columns='Mes_Normalizado', 
                     aggfunc='sum', 
-                    fill_value=0.0
+                    fill_value=0
                 )
                 
                 # Garante os 12 meses em ordem exata
                 ordem_meses_fixa = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
-                pivot = pivot.reindex(columns=ordem_meses_fixa, fill_value=0.0)
+                pivot = pivot.reindex(columns=ordem_meses_fixa, fill_value=0)
 
                 # Adiciona totalizador por linha
                 pivot['Total'] = pivot.sum(axis=1)
                 
-                # Estilização visual (cores nas células com horas)
+                # Estilização visual (cores nas células com horas inteiras)
                 def destacar_celulas(val):
                     if isinstance(val, (int, float)) and val > 0:
                         return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
                     return ''
 
-                pivot_estilizado = pivot.style.format("{:.2f}").map(destacar_celulas)
+                pivot_estilizado = pivot.style.format("{:.0f}").map(destacar_celulas)
                 
                 st.dataframe(pivot_estilizado, use_container_width=True)
             else:
