@@ -51,8 +51,8 @@ if uploaded_file and conexao_ok:
             
             # Dicionário para traduzir o mês numérico para abreviação em português
             meses_pt = {
-                1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN',
-                7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
+                01/2026: 'JAN', 02/2026: 'FEV', 03/2026: 'MAR', 04/2026: 'ABR', 05/2026: 'MAI', 06/2026: 'JUN',
+                07/2026: 'JUL', 08/2026: 'AGO', 09/2026: 'SET', 10/2026: 'OUT', 11/2026: 'NOV', 12/2026: 'DEZ'
             }
             num_mes = datas_convertidas.dt.month
             ano_mes = datas_convertidas.dt.year
