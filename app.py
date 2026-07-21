@@ -44,20 +44,17 @@ if uploaded_file and conexao_ok:
         df = pd.read_csv(uploaded_file, sep=None, engine='python')
         df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
         
-        # Tratamento de Data de Criação (para manter o campo Data preenchido)
+        # Data de criação para referência
         if 'Criado' in df.columns:
             datas_criado = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
             df['Data'] = datas_criado.dt.strftime('%Y-%m-%d').fillna(df['Criado'].astype(str))
         else:
             df['Data'] = ""
 
-        # Tratamento de Mês baseado primariamente na coluna 'Resolvido' 
-        # (Se estiver em branco, usa a data 'Criado' como plano B)
+        # Regra do Mês baseada primariamente em 'Resolvido' (com 'Criado' de fallback)
         coluna_base_data = 'Resolvido' if 'Resolvido' in df.columns else 'Criado'
         if coluna_base_data in df.columns:
             datas_base = pd.to_datetime(df[coluna_base_data], errors='coerce', format='mixed')
-            
-            # Se 'Resolvido' estiver vazio para algum item, tenta preencher com 'Criado'
             if 'Resolvido' in df.columns and 'Criado' in df.columns:
                 datas_criado_alt = pd.to_datetime(df['Criado'], errors='coerce', format='mixed')
                 datas_base = datas_base.fillna(datas_criado_alt)
@@ -67,10 +64,9 @@ if uploaded_file and conexao_ok:
                 7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'
             }
             num_mes = datas_base.dt.month
-            ano_mes = datas_base.dt.year
             
-            # Formata explicitamente como 'JAN/2026', 'FEV/2026', etc.
-            df['Mes'] = [f"{meses_pt[int(m)]}/{int(a)}" if pd.notnull(m) and pd.notnull(a) else "" for m, a in zip(num_mes, ano_mes)]
+            # Padroniza apenas com o nome do mês por extenso (Ex: JAN, FEV...)
+            df['Mes'] = [meses_pt[int(m)] if pd.notnull(m) else "" for m in num_mes]
         else:
             df['Mes'] = ""
             
@@ -100,48 +96,44 @@ if conexao_ok:
             # Limpeza
             df_hist['Horas'] = pd.to_numeric(df_hist['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
-            
-            # Remove linhas de cabeçalho duplicadas que possam ter vindo do histórico antigo
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
-            # Remove linhas onde a coluna Mes está vazia ou inválida
-            df_hist = df_hist[df_hist['Mes'].str.contains('/', na=False)]
-            
-            if not df_hist.empty:
-                # Cria colunas auxiliares de Ano e Mês numérico para ordenação correta na Pivot Table
-                def extrair_ordenacao(val):
-                    try:
-                        partes = val.split('/')
-                        mes_str, ano_str = partes[0], partes[1]
-                        inv_meses = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6,
-                                     'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
-                        return int(ano_str) * 100 + inv_meses.get(mes_str, 0)
-                    except:
-                        return 0
+            # Recalcula/Normaliza a coluna 'Mes' diretamente das datas da planilha para expurgar resíduos antigos
+            # Isso garante que mesmo dados antigos da planilha venham padronizados apenas como JAN, FEV, etc.
+            def normalizar_mes(row):
+                for col in ['Resolvido', 'Criado', 'Data']:
+                    if col in row and str(row[col]).strip() != "":
+                        dt = pd.to_datetime(row[col], errors='coerce', format='mixed')
+                        if pd.notnull(dt):
+                            m_map = {1: 'JAN', 2: 'FEV', 3: 'MAR', 4: 'ABR', 5: 'MAI', 6: 'JUN',
+                                     7: 'JUL', 8: 'AGO', 9: 'SET', 10: 'OUT', 11: 'NOV', 12: 'DEZ'}
+                            return m_map.get(dt.month, "")
+                return str(row.get('Mes', '')).upper()
 
-                df_hist['Ord_Mes'] = df_hist['Mes'].apply(extrair_ordenacao)
+            df_hist['Mes_Normalizado'] = df_hist.apply(normalizar_mes, axis=1)
+            df_hist = df_hist[df_hist['Mes_Normalizado'].isin(['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'])]
+
+            if not df_hist.empty:
+                # Ordem fixa cronológica dos meses para exibição limpa
+                ordem_meses_fixa = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
                 
-                # Ordena o DataFrame base pelas colunas auxiliares para garantir a ordem cronológica nas colunas da tabela
-                df_hist = df_hist.sort_values('Ord_Mes')
-                
-                # Pivot table utilizando a coluna 'Mes' formatada por extenso
                 pivot = pd.pivot_table(
                     df_hist, 
                     values='Horas', 
                     index=['Componentes', 'Responsável', 'RR'], 
-                    columns='Mes', 
+                    columns='Mes_Normalizado', 
                     aggfunc='sum', 
                     fill_value=0
                 )
                 
-                # Reorganiza as colunas da pivot table em ordem cronológica estritamente correta
-                colunas_ordenadas = sorted([c for c in pivot.columns if c != 'Total'], key=extrair_ordenacao)
-                pivot = pivot[colunas_ordenadas]
+                # Reorganiza as colunas estritamente na ordem cronológica de Janeiro a Dezembro
+                colunas_existentes = [m for m in ordem_meses_fixa if m in pivot.columns]
+                pivot = pivot[colunas_existentes]
 
                 # Adiciona totalizador
                 pivot['Total'] = pivot.sum(axis=1)
                 
-                # Estilização visual (mantendo as cores nas células com horas)
+                # Estilização visual (cores nas células com horas)
                 def destacar_celulas(val):
                     if isinstance(val, (int, float)) and val > 0:
                         return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
@@ -151,7 +143,7 @@ if conexao_ok:
                 
                 st.dataframe(pivot_estilizado, use_container_width=True)
             else:
-                st.info("Nenhum dado com mês válido encontrado na planilha.")
+                st.info("Nenhum dado válido para exibição na matriz.")
         else:
             st.info("Planilha vazia.")
     except Exception as e:
