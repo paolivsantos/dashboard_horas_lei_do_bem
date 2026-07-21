@@ -11,12 +11,12 @@ URL_PLANILHA = "https://docs.google.com/spreadsheets/d/10Ju9R5RylNF6HHK_oV-NBZij
 
 # Mapeamento consolidado
 MAPEAMENTO_RR = {
-    "Alescia Fernandes": "84654", "Anderson Batista": "85236", "Anderson Oliva": "78172",
-    "Bruno Moiteiro": "84437", "Dyonathan Jordan": "86281", "Gabriel Shioda": "86618",
-    "Glaucia Mekaru": "84452", "Guilherme Barreira": "85338", "Jorge Luiz": "86238",
-    "José Clailton": "85479", "Lucas Godinho": "85224", "Lucas Martinez": "84515",
-    "Rafael Ferreira": "85051", "Reinaldo Marques": "82927", "Ronaldo Maciel": "84162",
-    "Vinicius Freire": "85499", "Vittor Strefezzi": "85335", "Willian Kenji": "85217"
+    "Alescia Bezerra Fernandes": "84654", "Anderson Batista Da Costa": "85236", "Anderson Lazaro Gomes Oliva": "78172",
+    "Bruno Rafael Borges Beltrao Moiteiro": "84437", "Dyonathan Jordan Do Nascimento Araujo": "86281", "Gabriel Shioda Lima": "86618",
+    "Glaucia Hiromi Mekaru": "84452", "Guilherme Oliver Barreira": "85338", "Jorge Luiz Dos Santos": "86238",
+    "José Clailton Menezes Jorge": "85479", "Lucas De Maria Godinho": "85224", "Lucas Martinez": "84515",
+    "Rafael Ferreira Da Silva": "85051", "Reinaldo Marques e Silva": "82927", "Ronaldo de Souza Maciel": "84162",
+    "Vinicius Freire de Oliveira": "85499", "Vittor Strefezzi": "85335", "Willian Kenji Hira": "85217"
 }
 
 # --- AUTENTICAÇÃO ---
