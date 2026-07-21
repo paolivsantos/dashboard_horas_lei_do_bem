@@ -69,7 +69,8 @@ if uploaded_file and conexao_ok:
         if 'Σ de Tempo Gasto' in df.columns and '∑ de tempo gasto' not in df.columns:
             df['∑ de tempo gasto'] = df['Σ de Tempo Gasto']
             
-        df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600
+        # Garante divisão precisa para gerar as horas decimais completas
+        df['Horas'] = pd.to_numeric(df.get('Tempo gasto', 0), errors='coerce').fillna(0) / 3600.0
         
         # Data de criação para referência
         if 'Criado' in df.columns:
@@ -131,8 +132,18 @@ if conexao_ok:
             dados_limpos = [linha[:len(cabecalhos_uteis)] for linha in dados[1:]]
             df_hist = pd.DataFrame(dados_limpos, columns=cabecalhos_uteis)
             
-            # Limpeza
-            df_hist['Horas'] = pd.to_numeric(df_hist['Horas'].str.replace(',', '.'), errors='coerce').fillna(0)
+            # Limpeza robusta de horas lidas da planilha (substitui vírgula por ponto e converte para float com alta precisão)
+            if 'Horas' in df_hist.columns:
+                df_hist['Horas'] = (
+                    df_hist['Horas']
+                    .astype(str)
+                    .str.replace('.', '', regex=False) # remove separador de milhar se houver
+                    .str.replace(',', '.', regex=False) # converte vírgula decimal para ponto
+                )
+                df_hist['Horas'] = pd.to_numeric(df_hist['Horas'], errors='coerce').fillna(0.0)
+            else:
+                df_hist['Horas'] = 0.0
+
             df_hist['RR'] = df_hist['Responsável'].map(MAPEAMENTO_RR).fillna("N/A")
             df_hist = df_hist[df_hist['Chave do Item'] != 'Chave do Item']
             
@@ -161,12 +172,12 @@ if conexao_ok:
                     index=['Componentes', 'Responsável', 'RR'], 
                     columns='Mes_Normalizado', 
                     aggfunc='sum', 
-                    fill_value=0
+                    fill_value=0.0
                 )
                 
                 # Garante os 12 meses em ordem exata
                 ordem_meses_fixa = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ']
-                pivot = pivot.reindex(columns=ordem_meses_fixa, fill_value=0)
+                pivot = pivot.reindex(columns=ordem_meses_fixa, fill_value=0.0)
 
                 # Adiciona totalizador por linha
                 pivot['Total'] = pivot.sum(axis=1)
@@ -177,7 +188,7 @@ if conexao_ok:
                         return 'background-color: #e6f4ea; color: #137333; font-weight: bold;'
                     return ''
 
-                pivot_estilizado = pivot.style.format("{:.1f}").map(destacar_celulas)
+                pivot_estilizado = pivot.style.format("{:.2f}").map(destacar_celulas)
                 
                 st.dataframe(pivot_estilizado, use_container_width=True)
             else:
